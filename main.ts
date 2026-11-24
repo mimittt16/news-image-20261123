@@ -68,6 +68,26 @@ if (trailer.readUInt32BE(0) !== 0 || trailer.subarray(4, 8).toString('latin1') !
   throw new Error('entry.png has no IEND trailer');
 }
 
+// Third check: walk every chunk and verify its CRC32, so a corrupted
+// or truncated chunk anywhere in the file is refused, and no bytes
+// may follow the IEND trailer.
+let offset = 8;
+while (offset + 8 <= image.length) {
+  const length = image.readUInt32BE(offset);
+  const type = image.subarray(offset + 4, offset + 8).toString('latin1');
+  if (offset + 12 + length > image.length) {
+    throw new Error(`entry.png chunk ${type} is truncated`);
+  }
+  if (crc32(image.subarray(offset + 4, offset + 8 + length)) !== image.readUInt32BE(offset + 8 + length)) {
+    throw new Error(`entry.png chunk ${type} CRC mismatch`);
+  }
+  offset += 12 + length;
+  if (type === 'IEND') break;
+}
+if (offset !== image.length) {
+  throw new Error('entry.png has trailing bytes after IEND');
+}
+
 mkdirSync(outputDir, { recursive: true });
 copyFileSync(imagePath, targetPath);
 const copied = statSync(targetPath).size;
